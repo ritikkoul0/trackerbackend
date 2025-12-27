@@ -97,7 +97,7 @@ func HandleGoogleCallback(c *gin.Context) {
 	}
 
 	// Set cookie with proper domain and SameSite settings
-	domain := "trackerbackend-ao16.onrender.com"
+	domain := ""
 	secure := false
 	sameSite := http.SameSiteLaxMode
 
