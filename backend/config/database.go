@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"log"
+	"os"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -19,7 +20,7 @@ func ConnectDatabase() {
 	defer cancel()
 
 	// MongoDB connection string
-	mongoURI := "mongodb://localhost:27017"
+	mongoURI := os.Getenv("MONGO_URI")
 
 	// Connect to MongoDB
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
@@ -54,5 +55,3 @@ func DisconnectDatabase() {
 		log.Println("MongoDB disconnected")
 	}
 }
-
-
