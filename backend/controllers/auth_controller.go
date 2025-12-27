@@ -96,8 +96,19 @@ func HandleGoogleCallback(c *gin.Context) {
 		return
 	}
 
-	// Set cookie
-	c.SetCookie("auth_token", jwtToken, 3600, "/", "localhost", false, true)
+	// Set cookie with proper domain and SameSite settings
+	domain := ""
+	secure := false
+	sameSite := http.SameSiteDefaultMode
+
+	// In production, use secure cookies with SameSite=None for cross-domain
+	if os.Getenv("APP_ENV") == "production" {
+		secure = true
+		sameSite = http.SameSiteNoneMode
+	}
+
+	c.SetSameSite(sameSite)
+	c.SetCookie("auth_token", jwtToken, 3600, "/", domain, secure, true)
 
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
@@ -204,7 +215,18 @@ func GetUserInfo(c *gin.Context) {
 
 // Logout clears the auth cookie
 func Logout(c *gin.Context) {
-	c.SetCookie("auth_token", "", -1, "/", "localhost", false, true)
+	domain := ""
+	secure := false
+	sameSite := http.SameSiteDefaultMode
+
+	// In production, use secure cookies with SameSite=None for cross-domain
+	if os.Getenv("APP_ENV") == "production" {
+		secure = true
+		sameSite = http.SameSiteNoneMode
+	}
+
+	c.SetSameSite(sameSite)
+	c.SetCookie("auth_token", "", -1, "/", domain, secure, true)
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
 
