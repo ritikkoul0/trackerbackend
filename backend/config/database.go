@@ -1,57 +1,63 @@
-package config
+package main
 
 import (
-	"context"
+	"investment-tracker-backend/config"
+	"investment-tracker-backend/controllers"
+	"investment-tracker-backend/routes"
 	"log"
 	"os"
-	"time"
 
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
-var (
-	DB     *mongo.Database
-	Client *mongo.Client
-)
-
-func ConnectDatabase() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// MongoDB connection string
-	mongoURI := os.Getenv("MONGO_URI")
-
-	// Connect to MongoDB
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
-	if err != nil {
-		log.Fatal("Failed to connect to MongoDB:", err)
+func main() {
+	// Load environment variables
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using default values")
 	}
 
-	// Ping the database
-	err = client.Ping(ctx, nil)
-	if err != nil {
-		log.Fatal("Failed to ping MongoDB:", err)
+	// Initialize database
+	config.ConnectDatabase()
+
+	// Initialize OAuth configuration
+	controllers.InitOAuth()
+
+	// Create Gin router
+	router := gin.Default()
+	router.SetTrustedProxies(nil)
+
+	// Get port from environment (Render provides PORT)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
 	}
 
-	log.Println("MongoDB connected successfully")
+	// Update CORS for production
+	allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
+	if allowedOrigins == "" {
+		allowedOrigins = "http://localhost:3000"
+	}
 
-	// Set the database
-	DB = client.Database("investmentdb")
-	Client = client
+	// CORS middleware - allow credentials for cookies
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{allowedOrigins},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+	}))
 
-	log.Println("Using database: investmentdb")
-}
+	// Setup routes
+	routes.SetupRoutes(router)
 
-// DisconnectDatabase closes the MongoDB connection
-func DisconnectDatabase() {
-	if Client != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := Client.Disconnect(ctx); err != nil {
-			log.Fatal("Failed to disconnect from MongoDB:", err)
-		}
-		log.Println("MongoDB disconnected")
+	// Start server
+	log.Printf("✅ Server starting on port %s", port)
+	log.Println("✅ Google OAuth configured")
+	log.Println("✅ MongoDB connected")
+	log.Printf("✅ CORS configured for: %s", allowedOrigins)
+	if err := router.Run(":" + port); err != nil {
+		log.Fatal("Failed to start server:", err)
 	}
 }
