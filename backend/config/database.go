@@ -1,63 +1,77 @@
-package main
+package config
 
 import (
-	"investment-tracker-backend/config"
-	"investment-tracker-backend/controllers"
-	"investment-tracker-backend/routes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"log"
 	"os"
+	"time"
 
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func main() {
-	// Load environment variables
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using default values")
+var (
+	DB     *mongo.Database
+	Client *mongo.Client
+)
+
+func ConnectDatabase() {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	mongoURI := os.Getenv("MONGO_URI")
+	if mongoURI == "" {
+		log.Fatal("MONGO_URI environment variable not set")
 	}
 
-	// Initialize database
-	config.ConnectDatabase()
-
-	// Initialize OAuth configuration
-	controllers.InitOAuth()
-
-	// Create Gin router
-	router := gin.Default()
-	router.SetTrustedProxies(nil)
-
-	// Get port from environment (Render provides PORT)
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	// Load system CA certs
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil {
+		log.Fatal("Failed to load system certs:", err)
 	}
 
-	// Update CORS for production
-	allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
-	if allowedOrigins == "" {
-		allowedOrigins = "http://localhost:3000"
+	tlsConfig := &tls.Config{
+		RootCAs:    rootCAs,
+		MinVersion: tls.VersionTLS12,
 	}
 
-	// CORS middleware - allow credentials for cookies
-	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{allowedOrigins},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-	}))
+	serverAPI := options.ServerAPI(options.ServerAPIVersion1)
 
-	// Setup routes
-	routes.SetupRoutes(router)
+	clientOpts := options.Client().
+		ApplyURI(mongoURI).
+		SetServerAPIOptions(serverAPI).
+		SetTLSConfig(tlsConfig).
+		SetAppName("Cluster0").
+		SetConnectTimeout(20 * time.Second)
 
-	// Start server
-	log.Printf("✅ Server starting on port %s", port)
-	log.Println("✅ Google OAuth configured")
-	log.Println("✅ MongoDB connected")
-	log.Printf("✅ CORS configured for: %s", allowedOrigins)
-	if err := router.Run(":" + port); err != nil {
-		log.Fatal("Failed to start server:", err)
+	client, err := mongo.Connect(ctx, clientOpts)
+	if err != nil {
+		log.Fatal("Failed to connect to MongoDB:", err)
 	}
+
+	if err := client.Ping(ctx, nil); err != nil {
+		log.Fatal("Failed to ping MongoDB:", err)
+	}
+
+	log.Println("MongoDB connected successfully")
+
+	DB = client.Database("investmentdb")
+	Client = client
+}
+
+func DisconnectDatabase() {
+	if Client == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := Client.Disconnect(ctx); err != nil {
+		log.Fatal("Failed to disconnect MongoDB:", err)
+	}
+
+	log.Println("MongoDB disconnected")
 }
