@@ -4,6 +4,7 @@ import (
 	"investment-tracker-backend/config"
 	"investment-tracker-backend/models"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,13 +20,26 @@ type DashboardResponse struct {
 	RecentExpenses   []models.Expense    `json:"recent_expenses"`
 }
 
-// GetDashboard retrieves dashboard summary data
+// GetDashboard retrieves dashboard summary data for the authenticated user
 func GetDashboard(c *gin.Context) {
+	// Get user_id from context
+	userIDStr, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userID, err := strconv.ParseUint(userIDStr.(string), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
 	var response DashboardResponse
 
-	// Get all investments
+	// Get all investments for this user only
 	var investments []models.Investment
-	if err := config.DB.Find(&investments).Error; err == nil {
+	if err := config.DB.Where("user_id = ?", uint(userID)).Find(&investments).Error; err == nil {
 		response.Investments = investments
 
 		// Calculate total investments and gains
@@ -39,23 +53,23 @@ func GetDashboard(c *gin.Context) {
 		response.TotalGains = totalCurrent - totalInvested
 	}
 
-	// Get current month budget (most recent)
+	// Get current month budget (most recent) for this user only
 	var budget models.Budget
-	if err := config.DB.Order("created_at DESC").First(&budget).Error; err == nil {
+	if err := config.DB.Where("user_id = ?", uint(userID)).Order("created_at DESC").First(&budget).Error; err == nil {
 		response.MonthlyIncome = budget.Income
 		response.MonthlyExpenses = budget.TotalExpenses
 		response.MonthlySavings = budget.Savings
 	}
 
-	// Get active goals (not completed, limit 5)
+	// Get active goals (not completed, limit 5) for this user only
 	var goals []models.Goal
-	if err := config.DB.Where("status != ?", "Completed").Limit(5).Find(&goals).Error; err == nil {
+	if err := config.DB.Where("user_id = ? AND status != ?", uint(userID), "Completed").Limit(5).Find(&goals).Error; err == nil {
 		response.Goals = goals
 	}
 
-	// Get recent expenses (limit 10, sorted by date descending)
+	// Get recent expenses (limit 10, sorted by date descending) for this user only
 	var expenses []models.Expense
-	if err := config.DB.Order("date DESC").Limit(10).Find(&expenses).Error; err == nil {
+	if err := config.DB.Where("user_id = ?", uint(userID)).Order("date DESC").Limit(10).Find(&expenses).Error; err == nil {
 		response.RecentExpenses = expenses
 	}
 
